@@ -58,66 +58,80 @@ export default function App() {
     });
   }, []);
 
-  const runAnalysis = useCallback(
-    async ({ userQuestion = "" } = {}) => {
-      if (!image) {
-        setError("Please upload an image first.");
-        fileInputRef.current?.focus();
-        return;
-      }
+ const runAnalysis = useCallback(
+  async ({ userQuestion = "" } = {}) => {
+    if (!image) {
+      setError("Please upload an image first.");
+      fileInputRef.current?.focus();
+      return;
+    }
 
-      abortRef.current?.abort();
-      abortRef.current = new AbortController();
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
 
-      setIsAnalyzing(true);
-      setError("");
-      setStatus(
-        userQuestion
-          ? "Answering your question..."
-          : "Analyzing scene..."
+    setIsAnalyzing(true);
+    setError("");
+    setStatus(
+      userQuestion
+        ? "Answering your question..."
+        : "Analyzing scene..."
+    );
+
+    try {
+      const formData = new FormData();
+
+      formData.append("image", image);
+      formData.append("question", userQuestion || "");
+      formData.append("mode", mode);
+
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/vision/analyze`,
+        {
+          method: "POST",
+          body: formData,
+          signal: abortRef.current.signal
+        }
       );
 
-      try {
-        const result = await analyzeImage({
-          image,
-          mode,
-          question: userQuestion,
-          signal: abortRef.current.signal
-        });
-
-        const spokenText =
-          result?.narration ||
-          result?.description ||
-          "No narration was generated.";
-
-        setNarration(spokenText);
-
-        setHistory((items) => [
-          {
-            id: crypto.randomUUID(),
-            mode: result.mode,
-            text: spokenText,
-            createdAt: Date.now()
-          },
-          ...items.slice(0, 7)
-        ]);
-
-        setStatus("Narration ready. Speaking now.");
-
-        speech.speak(spokenText);
-      } catch (analysisError) {
-        if (analysisError.name !== "AbortError") {
-          setError(
-            analysisError.message ||
-              "Unable to analyze the image."
-          );
-        }
-      } finally {
-        setIsAnalyzing(false);
+      if (!response.ok) {
+        throw new Error("Failed to analyze image.");
       }
-    },
-    [image, mode, speech]
-  );
+
+      const result = await response.json();
+
+      const spokenText =
+        result?.narration ||
+        result?.description ||
+        "No narration was generated.";
+
+      setNarration(spokenText);
+
+      setHistory((items) => [
+        {
+          id: crypto.randomUUID(),
+          mode: result.mode,
+          text: spokenText,
+          createdAt: Date.now()
+        },
+        ...items.slice(0, 7)
+      ]);
+
+      setStatus("Narration ready. Speaking now.");
+
+      speech.speak(spokenText);
+    } catch (analysisError) {
+      if (analysisError.name !== "AbortError") {
+        setError(
+          analysisError.message ||
+            "Unable to analyze the image."
+        );
+      }
+    } finally {
+      setIsAnalyzing(false);
+    }
+  },
+  [image, mode, speech]
+);
 
   const readText = useCallback(async () => {
     if (!image) {
